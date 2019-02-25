@@ -1,13 +1,13 @@
-package com.kenshuchong.MongodbSink;
+package flume.sink.mongo;
 
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.BATCH_SIZE;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.COLLECTION;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.DATABASE;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.DEFAULT_BATCH_SIZE;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.HOSTNAMES;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.PASSWORD;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.USER;
-import static com.kenshuchong.MongodbSink.MongoSinkConstants.AUTHENTICALTION;
+import static flume.sink.mongo.MongoSinkConstants.BATCH_SIZE;
+import static flume.sink.mongo.MongoSinkConstants.COLLECTION;
+import static flume.sink.mongo.MongoSinkConstants.DATABASE;
+import static flume.sink.mongo.MongoSinkConstants.DEFAULT_BATCH_SIZE;
+import static flume.sink.mongo.MongoSinkConstants.HOSTNAMES;
+import static flume.sink.mongo.MongoSinkConstants.PASSWORD;
+import static flume.sink.mongo.MongoSinkConstants.USER;
+import static flume.sink.mongo.MongoSinkConstants.AUTHENTICALTION;
 
 // import com.sun.org.apache.xpath.internal.operations.String;
 import java.nio.charset.StandardCharsets;
@@ -56,34 +56,31 @@ public class MongoSinkSelf extends AbstractSink implements Configurable {
   Map<java.lang.String, List<Document>> documents_map = new HashMap<java.lang.String, List<Document>>();
   Map<java.lang.String, MongoCollection<Document>> collection_map = new HashMap<java.lang.String, MongoCollection<Document>>();
 
-  // private SinkCounter sinkCounter;
+  private SinkCounter sinkCounter;
 
   public Status process() throws EventDeliveryException {
     Status status = Status.READY;
-
-    // List<Document> documents_default = new ArrayList<Document>(batchSize);
-
     Channel channel = getChannel();
     Transaction transaction = channel.getTransaction();
 
-    List<Document> documents = new ArrayList<Document>();
-    // MongoCollection<Document> collection;
+    List<Document> documents = null;
     try {
       transaction.begin();
 
-      long count;
+      long count = 0;
       long lastTimestamp = 0;
       String lastPid = "";
-      for (count = 0; count < batchSize; ++count) {
+      while (true) {
         Event event = channel.take();
-
         if (event == null) {
           break;
         }
 
-        // get headers
+        // 获取消息头
+        // 从消息头中获取数据集和文档集
         Map<java.lang.String, java.lang.String> jsonHeader = event.getHeaders();
         try {
+          // 获取数据集名称
           java.lang.String collName = jsonHeader.get("collection");
           if (collName != null) {
             if (!collection_map.containsKey(collName)) {
@@ -97,44 +94,49 @@ public class MongoSinkSelf extends AbstractSink implements Configurable {
         } catch (Exception e) {
           logger.error(e.toString());
         }
-        // get body
+        // 获取消息体
         java.lang.String jsonEvent = null;
         try {
           jsonEvent = new java.lang.String(event.getBody(), StandardCharsets.UTF_8);
           Document sentEvent = Document.parse(jsonEvent);
-          if(lastTimestamp == sentEvent.getLong("timestamp") &&
-              lastPid.equalsIgnoreCase(sentEvent.getString("pid"))){
-            logger.error(jsonHeader.get("type") + "  " + lastPid + "  " + lastTimestamp);
+          // 检查重复消息问题，通过判断时间戳和pid
+          if (lastTimestamp == sentEvent.getLong("timestamp") && lastPid.equalsIgnoreCase(sentEvent.getString("pid"))) {
+            logger.error("消息重复: " + jsonHeader.get("type") + "  " + lastPid + "  " + lastTimestamp);
           }
           lastTimestamp = sentEvent.getLong("timestamp");
           lastPid = sentEvent.getString("pid");
           documents.add(sentEvent);
+          count++;
         } catch (Exception e) {
           logger.error(e.toString());
         }
       }
 
-      if (count <= 0) {
-        // sinkCounter.incrementBatchEmptyCount();
-        status = Status.BACKOFF;
-        transaction.rollback();
+      if (count < 1) {
+        sinkCounter.incrementBatchEmptyCount();
+        // status = Status.BACKOFF;
+        // transaction.rollback();
+        transaction.commit();
       } else {
         // if (count < batchSize) {
-        //   // sinkCounter.incrementBatchUnderflowCount();
-        //   // status = Status.BACKOFF;
+        // // sinkCounter.incrementBatchUnderflowCount();
+        // // status = Status.BACKOFF;
         // } else {
-        //   // sinkCounter.incrementBatchCompleteCount();
+        // // sinkCounter.incrementBatchCompleteCount();
         // }
 
-        // sinkCounter.addToEventDrainAttemptCount(count);
+        sinkCounter.addToEventDrainAttemptCount(count);
+
+        int instrtCount = 0;
         for (String key : documents_map.keySet()) {
           if (!collection_map.containsKey(key)) {
             continue;
           }
           List<Document> docs = documents_map.get(key);
-          if(docs.size() > 0){
-            try{
+          if (docs.size() > 0) {
+            try {
               collection_map.get(key).insertMany(docs);
+              instrtCount += docs.size();
               docs.clear();
             } catch (Exception ex) {
               logger.error("Exception during insert ", ex);
@@ -142,8 +144,8 @@ public class MongoSinkSelf extends AbstractSink implements Configurable {
           }
         }
         transaction.commit();
+        sinkCounter.addToEventDrainSuccessCount(instrtCount);
       }
-      // sinkCounter.addToEventDrainSuccessCount(count);
     } catch (Throwable t) {
       try {
         transaction.rollback();
@@ -215,7 +217,7 @@ public class MongoSinkSelf extends AbstractSink implements Configurable {
     batchSize = context.getInteger(BATCH_SIZE, DEFAULT_BATCH_SIZE);
 
     // if (sinkCounter == null) {
-    //   sinkCounter = new SinkCounter(getName());
+    // sinkCounter = new SinkCounter(getName());
     // }
   }
 

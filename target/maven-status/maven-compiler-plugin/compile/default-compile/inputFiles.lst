@@ -1,2 +1,2 @@
-/Library/WebServer/Documents/project/jinsui/DunGou/dungou/MongodbSink-master/src/main/java/com/kenshuchong/MongodbSink/MongoSinkSelf.java
-/Library/WebServer/Documents/project/jinsui/DunGou/dungou/MongodbSink-master/src/main/java/com/kenshuchong/MongodbSink/MongoSinkConstants.java
+/Library/WebServer/Documents/project/jinsui/DunGou/dungou/MongodbSink-master/flume-sink-mongo/src/main/java/flume/sink/mongo/MongoSinkConstants.java
+/Library/WebServer/Documents/project/jinsui/DunGou/dungou/MongodbSink-master/flume-sink-mongo/src/main/java/flume/sink/mongo/MongoSinkSelf.java
