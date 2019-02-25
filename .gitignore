@@ -41,8 +41,4 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
-
-
-target/MongodbSink-1.0.0.jar
 .vscode/launch.json
-target/sink.mongo-1.0.1.jar
